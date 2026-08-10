@@ -3,6 +3,11 @@
 import { useState } from "react";
 import { downloadHtmlFile } from "../lib/download";
 import { getSitePreferences, THEME_COLORS, SIZE_SCALE, SitePreferences } from "../lib/preferences";
+import { CorpusWord, CORPUS_3, CORPUS_4, CORPUS_5, pickRandomCorpusWords } from "../lib/wordCorpus";
+
+// ---------------------------------------------------------------------------
+// Phoneme keyboard data
+// ---------------------------------------------------------------------------
 
 type KeyCell = { symbol: string; hint: string } | null;
 
@@ -16,7 +21,7 @@ const KEYBOARD: KeyCell[][] = [
   [
     { symbol: "b", hint: "B as in bat" },
     { symbol: "d", hint: "D as in dog" },
-    { symbol: "g", hint: "G as in go" },
+    { symbol: "ɡ", hint: "G as in go" },
     null,
   ],
   [
@@ -69,7 +74,7 @@ const KEYBOARD: KeyCell[][] = [
   ],
   [
     { symbol: "æɪ", hint: "AY as in day" },
-    { symbol: "ae", hint: "I as in my" },
+    { symbol: "ɑe", hint: "I as in my" },
     { symbol: "oɪ", hint: "OY as in boy" },
     { symbol: "əʉ", hint: "O as in go" },
   ],
@@ -80,6 +85,10 @@ const KEYBOARD: KeyCell[][] = [
     { symbol: "ə", hint: "A as in about" },
   ],
 ];
+
+// ---------------------------------------------------------------------------
+// Guess-feedback logic (shared shape with the exported vanilla-JS version)
+// ---------------------------------------------------------------------------
 
 type FeedbackStatus = "correct" | "present" | "absent";
 
@@ -110,6 +119,10 @@ const cellColors: Record<FeedbackStatus, string> = {
   absent: "#cbd5e1",
 };
 
+// ---------------------------------------------------------------------------
+// Shared style helpers
+// ---------------------------------------------------------------------------
+
 const inputStyle = {
   border: "1px solid #cbd5e1",
   borderRadius: "8px",
@@ -120,15 +133,56 @@ const inputStyle = {
   fontFamily: "monospace",
 };
 
-// Builds a fully self-contained HTML document: markup, CSS, and a vanilla-JS
+const tierButtonStyle = (selected: boolean) => ({
+  border: selected ? "1px solid #1d4ed8" : "1px solid #cbd5e1",
+  backgroundColor: selected ? "#2563eb" : "transparent",
+  color: selected ? "#fff" : "inherit",
+  borderRadius: "6px",
+  padding: "0.35rem 0.6rem",
+  cursor: "pointer",
+  fontFamily: "monospace",
+  fontSize: "0.9rem",
+});
+
+// Random Word / Preview / Generate all share this shape — only the accent
+// color changes.
+function actionButtonStyle(variant: "neutral" | "primary") {
+  const colors =
+    variant === "primary"
+      ? { border: "1px solid #1d4ed8", backgroundColor: "#2563eb" }
+      : { border: "1px solid #475569", backgroundColor: "#64748b" };
+
+  return {
+    ...colors,
+    color: "#fff",
+    borderRadius: "8px",
+    padding: "0.6rem",
+    fontWeight: 600,
+    cursor: "pointer",
+    width: "100%",
+    boxSizing: "border-box" as const,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Standalone HTML export
+// ---------------------------------------------------------------------------
+
+// Builds a fully self-contained HTML document: markup, CSS (matching the
+// site's current theme/layout/size preferences), and a vanilla-JS
 // re-implementation of the guess/feedback logic. No React, no site chrome.
 function buildWordleHtml(
   targetWord: string[],
   targetEnglish: string,
   numGuesses: number,
-  showHints: boolean
+  showHints: boolean,
+  prefs: SitePreferences
 ): string {
   const wordLength = targetWord.length;
+  const colors = THEME_COLORS[prefs.theme];
+  const scale = SIZE_SCALE[prefs.size];
+  const bodyPadding = prefs.layout === "compact" ? "1rem 0.5rem" : "2rem 1rem";
+  const h1Size = prefs.layout === "compact" ? "1.7rem" : "2.3rem";
 
   const gridRows = Array.from({ length: numGuesses }, (_, r) =>
     '<div class="grid-row">' +
@@ -173,22 +227,42 @@ function buildWordleHtml(
     '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
     "<title>Phoneme Wordle</title>",
     "<style>",
-    "body { font-family: 'Trebuchet MS', Verdana, sans-serif; text-align: center; padding: 2rem 1rem; background: #ffffff; color: #171717; }",
-    "h1 { font-size: 2.3rem; margin-bottom: 1.5rem; }",
+    "body { font-family: 'Trebuchet MS', Verdana, sans-serif; text-align: center; padding: " +
+      bodyPadding +
+      "; background: " +
+      colors.background +
+      "; color: " +
+      colors.foreground +
+      "; zoom: " +
+      scale +
+      "; }",
+    "h1 { font-size: " + h1Size + "; margin-bottom: 1.5rem; }",
     "#grid { display: inline-block; margin-bottom: 1.5rem; }",
     ".grid-row { display: flex; gap: 0.4rem; margin-bottom: 0.4rem; justify-content: center; }",
-    ".tile { width: 48px; height: 48px; border: 1px solid #94a3b8; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-family: monospace; }",
-    ".tile.correct { background-color: #86efac; }",
-    ".tile.present { background-color: #fde68a; }",
-    ".tile.absent { background-color: #cbd5e1; }",
-    "#keyboard { display: inline-block; border: 1px solid #94a3b8; border-radius: 6px; overflow: hidden; }",
+    ".tile { width: 48px; height: 48px; border: 1px solid " +
+      colors.border +
+      "; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-family: monospace; }",
+    ".tile.correct { background-color: #86efac; color: #1f2937; }",
+    ".tile.present { background-color: #fde68a; color: #1f2937; }",
+    ".tile.absent { background-color: #cbd5e1; color: #1f2937; }",
+    "#keyboard { display: inline-block; border: 1px solid " +
+      colors.border +
+      "; border-radius: 6px; overflow: hidden; }",
     ".key-row { display: flex; }",
-    ".key { width: 90px; height: 44px; border: 1px solid #cbd5e1; background: transparent; cursor: pointer; font-family: monospace; font-weight: 600; font-size: 1rem; }",
+    ".key { width: 90px; height: 44px; border: 1px solid " +
+      colors.border +
+      "; background: transparent; color: " +
+      colors.foreground +
+      "; cursor: pointer; font-family: monospace; font-weight: 600; font-size: 1rem; }",
     ".key.blank { cursor: default; }",
     ".key:disabled { cursor: default; opacity: 0.6; }",
     "#controls { margin-top: 1rem; display: flex; gap: 0.5rem; justify-content: center; }",
     "#controls button { border-radius: 6px; padding: 0.5rem 1.5rem; cursor: pointer; font-weight: 600; }",
-    "#backspace { border: 1px solid #cbd5e1; background: transparent; }",
+    "#backspace { border: 1px solid " +
+      colors.border +
+      "; background: transparent; color: " +
+      colors.foreground +
+      "; }",
     "#enter { border: 1px solid #475569; background-color: #64748b; color: #fff; }",
     "#message { margin-top: 1rem; font-weight: 700; }",
     "</style>",
@@ -293,20 +367,80 @@ function buildWordleHtml(
   ].join("\n");
 }
 
+// ---------------------------------------------------------------------------
+// Corpus browser (collapsible tier of words, single-select)
+// ---------------------------------------------------------------------------
+
+function CorpusTier({
+  title,
+  words,
+  selectedEnglish,
+  onSelect,
+}: {
+  title: string;
+  words: CorpusWord[];
+  selectedEnglish: string;
+  onSelect: (word: CorpusWord) => void;
+}) {
+  return (
+    <details style={{ marginBottom: "0.75rem" }}>
+      <summary style={{ cursor: "pointer", fontWeight: 600, marginBottom: "0.5rem" }}>
+        {title} ({words.length})
+      </summary>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem", marginTop: "0.5rem" }}>
+        {words.map((word) => (
+          <button
+            key={word.english}
+            onClick={() => onSelect(word)}
+            style={tierButtonStyle(selectedEnglish === word.english)}
+            title={word.phonemes.join(" ")}
+          >
+            {word.english}
+          </button>
+        ))}
+      </div>
+    </details>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------------
+
 export default function WordlePage() {
+  // Builder form state
   const [phonemeWordInput, setPhonemeWordInput] = useState("");
   const [englishWordInput, setEnglishWordInput] = useState("");
   const [showHints, setShowHints] = useState(true);
   const [numGuesses, setNumGuesses] = useState(6);
+  const [message, setMessage] = useState("");
 
+  // Active game state (populated once "Preview" is clicked)
   const [generated, setGenerated] = useState(false);
   const [targetWord, setTargetWord] = useState<string[]>([]);
   const [targetEnglish, setTargetEnglish] = useState("");
-
   const [guesses, setGuesses] = useState<string[][]>([]);
   const [currentGuess, setCurrentGuess] = useState<string[]>([]);
   const [gameStatus, setGameStatus] = useState<"playing" | "won" | "lost">("playing");
-  const [message, setMessage] = useState("");
+
+  // Highlights whichever corpus word is currently loaded into the inputs.
+  // Typing by hand simply clears the highlight, which is the behaviour we want.
+  const selectedEnglish = englishWordInput.trim().toLowerCase();
+
+  // --- Word selection ---
+
+  function handleSelectCorpusWord(word: CorpusWord) {
+    setPhonemeWordInput(word.phonemes.join(" "));
+    setEnglishWordInput(word.english);
+    setMessage("");
+  }
+
+  function handleRandomWord() {
+    const [word] = pickRandomCorpusWords(1);
+    if (word) handleSelectCorpusWord(word);
+  }
+
+  // --- Preview (in-app playable view) ---
 
   function handlePreview() {
     const parsedTarget = phonemeWordInput.trim().split(/\s+/).filter(Boolean);
@@ -328,9 +462,10 @@ export default function WordlePage() {
     setMessage("");
   }
 
-  // Builds and downloads the standalone HTML file. Uses the currently
-  // previewed word if one exists; otherwise reads directly from the form
-  // inputs. Never calls state setters that alter the live preview.
+  // --- Generate (standalone HTML download) ---
+  // Uses the currently previewed word if one exists; otherwise reads
+  // directly from the form inputs. Never alters the live preview state.
+
   function handleGenerate() {
     let exportTarget = targetWord;
     let exportEnglish = targetEnglish;
@@ -345,10 +480,13 @@ export default function WordlePage() {
       exportEnglish = englishWordInput.trim();
     }
 
-    const html = buildWordleHtml(exportTarget, exportEnglish, numGuesses, showHints);
+    const prefs = getSitePreferences();
+    const html = buildWordleHtml(exportTarget, exportEnglish, numGuesses, showHints, prefs);
     const safeName = exportEnglish.toLowerCase().replace(/[^a-z0-9]+/g, "-");
     downloadHtmlFile(`phoneme-wordle-${safeName}.html`, html);
   }
+
+  // --- Gameplay (in-app preview) ---
 
   function handleKeyClick(symbol: string) {
     if (gameStatus !== "playing") return;
@@ -379,6 +517,8 @@ export default function WordlePage() {
     setCurrentGuess([]);
   }
 
+  // --- Render ---
+
   return (
     <div
       style={{
@@ -393,7 +533,46 @@ export default function WordlePage() {
       </h2>
 
       {!generated && (
-        <div style={{ maxWidth: "320px", margin: "1.5rem auto 0", textAlign: "left" }}>
+        <div style={{ maxWidth: "360px", margin: "1.5rem auto 0", textAlign: "left" }}>
+          <strong>Choose a Word</strong>
+          <p style={{ fontSize: "0.85rem", color: "var(--muted, #64748b)", marginTop: "0.25rem" }}>
+            Pick a word from the lists below, or type your own further down.
+          </p>
+
+          <div
+            style={{
+              border: "1px solid #cbd5e1",
+              borderRadius: "8px",
+              padding: "0.75rem",
+              marginTop: "0.5rem",
+            }}
+          >
+            <CorpusTier
+              title="3-Phoneme Words"
+              words={CORPUS_3}
+              selectedEnglish={selectedEnglish}
+              onSelect={handleSelectCorpusWord}
+            />
+            <CorpusTier
+              title="4-Phoneme Words"
+              words={CORPUS_4}
+              selectedEnglish={selectedEnglish}
+              onSelect={handleSelectCorpusWord}
+            />
+            <CorpusTier
+              title="5-Phoneme Words"
+              words={CORPUS_5}
+              selectedEnglish={selectedEnglish}
+              onSelect={handleSelectCorpusWord}
+            />
+          </div>
+
+          <button onClick={handleRandomWord} style={{ marginTop: "0.75rem", ...actionButtonStyle("neutral") }}>
+            Random Word
+          </button>
+
+          <hr style={{ border: "none", borderTop: "1px solid #e2e8f0", margin: "1.25rem 0" }} />
+
           <label>
             <strong>Phoneme Word</strong>
             <br />
@@ -460,36 +639,10 @@ export default function WordlePage() {
           </div>
 
           <div style={{ marginTop: "1.25rem", display: "flex", flexDirection: "column", gap: "0.6rem" }}>
-            <button
-              onClick={handlePreview}
-              style={{
-                border: "1px solid #475569",
-                borderRadius: "8px",
-                padding: "0.6rem",
-                color: "#fff",
-                backgroundColor: "#64748b",
-                fontWeight: 600,
-                cursor: "pointer",
-                width: "100%",
-                boxSizing: "border-box",
-              }}
-            >
+            <button onClick={handlePreview} style={actionButtonStyle("neutral")}>
               Preview
             </button>
-            <button
-              onClick={handleGenerate}
-              style={{
-                border: "1px solid #1d4ed8",
-                borderRadius: "8px",
-                padding: "0.6rem",
-                color: "#fff",
-                backgroundColor: "#2563eb",
-                fontWeight: 600,
-                cursor: "pointer",
-                width: "100%",
-                boxSizing: "border-box",
-              }}
-            >
+            <button onClick={handleGenerate} style={actionButtonStyle("primary")}>
               Generate (Download HTML)
             </button>
           </div>

@@ -552,7 +552,7 @@ export default function WordSearchPage() {
             Randomize 5
           </button>
 
-          <div
+          <details
             style={{
               border: "1px solid #cbd5e1",
               borderRadius: "8px",
@@ -560,7 +560,9 @@ export default function WordSearchPage() {
               marginTop: "1rem",
             }}
           >
-            <strong style={{ fontSize: "0.9rem" }}>Add a Custom Word</strong>
+            <summary style={{ cursor: "pointer", fontWeight: 600, fontSize: "0.9rem" }}>
+              Add a Custom Word
+            </summary>
             <div style={{ marginTop: "0.5rem" }}>
               <input
                 type="text"
@@ -613,7 +615,7 @@ export default function WordSearchPage() {
                 </p>
               )}
             </div>
-          </div>
+          </details>
 
           <div style={{ marginTop: "1rem" }}>
             <strong style={{ fontSize: "0.9rem" }}>Selected ({selectedWords.length})</strong>
