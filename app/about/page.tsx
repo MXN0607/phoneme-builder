@@ -71,7 +71,16 @@ export default function AboutPage() {
             color: "var(--muted, #64748b)",
           }}
         >
-          [Embed or link your demo video here]
+          <div style={{ textAlign: "center", marginTop: "1rem" }}>
+            <video
+              controls
+              width="100%"
+              style={{ maxWidth: "800px", borderRadius: "12px" }}
+            >
+              <source src="/guide.mp4" type="video/mp4" />
+              Your browser does not support the video tag.
+            </video>
+          </div>
         </div>
 
         <h3 style={{ marginTop: "1.5rem" }}>Student Details:</h3>
