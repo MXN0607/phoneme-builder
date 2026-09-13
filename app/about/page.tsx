@@ -29,32 +29,53 @@ export default function AboutPage() {
         </p>
 
         <p>
-          <strong>This assessment (Assessment 1) is frontend only.</strong> It
-          focuses on interface design, usability, and the interactive builder
-          and preview experience. There is no database or dynamic word list
-          management yet — the Word Search draws from a small fixed bank of
-          phoneme words, and the Wordle builder works with a single
-          teacher-entered word. Database-backed word lists and richer
-          generation options are planned for later assessments.
+          <strong>Assessment 2 adds the backend and database layer</strong>{" "}
+          behind the Assessment 1 interface. Word lists, phonemes, and
+          activity settings are now stored in a SQLite database (via Prisma)
+          instead of being hard-coded into the frontend, with a REST API and
+          full create/read/update/delete support for both individual words
+          and saved activity configurations.
         </p>
 
-        <h3 style={{ marginTop: "2rem" }}>Wordle</h3>
+        <h3 style={{ marginTop: "2rem" }}>Word Bank</h3>
         <p>
-          Teachers enter a phoneme-based target word and its English
-          equivalent, choose whether hint tooltips are shown, and set the
-          number of guesses. Students then guess the word phoneme by phoneme
-          using an on-screen phoneme keyboard, with tile colours showing how
-          close each guess is — similar to classic Wordle, but built around
+          The <strong>Word Bank</strong> page manages the phoneme-based word
+          list stored in the database — teachers can add new words, edit or
+          delete existing ones, and filter by phoneme count. These words are
+          reused everywhere: in the built-in corpus tiers, in a dedicated
+          &quot;My Word Bank&quot; tier inside both builders, and whenever an
+          activity is saved.
+        </p>
+
+        <h3 style={{ marginTop: "1.5rem" }}>Saved Activities</h3>
+        <p>
+          Both builders can save the current word(s) and settings as a
+          reusable <strong>Activity</strong> — a Wordle target word, or a
+          Word Search word list plus grid size. Saved activities appear on
+          the <strong>Activities</strong> page, where they can be reopened
+          into the relevant builder (to tweak and regenerate the HTML output)
+          or deleted.
+        </p>
+
+        <h3 style={{ marginTop: "1.5rem" }}>Wordle</h3>
+        <p>
+          Teachers pick a phoneme-based target word — from the built-in
+          corpus, from the database-backed Word Bank, or typed in by hand —
+          choose whether hint tooltips are shown, and set the number of
+          guesses. Students then guess the word phoneme by phoneme using an
+          on-screen phoneme keyboard, with tile colours showing how close
+          each guess is — similar to classic Wordle, but built around
           phonemic sounds instead of letters.
         </p>
 
         <h3 style={{ marginTop: "1.5rem" }}>Word Search</h3>
         <p>
-          Each time a puzzle is generated, five phoneme-based words are
-          randomly selected from a fixed word bank and placed into a grid.
-          Students find the words by clicking and dragging across the grid in
-          any direction, with found words highlighted and crossed off the
-          list automatically.
+          A puzzle starts with five phoneme-based words randomly selected
+          from the built-in corpus, but teachers can add, remove, and swap in
+          words from the database-backed Word Bank (or type new ones) before
+          generating the grid. Students find the words by clicking and
+          dragging across the grid in any direction, with found words
+          highlighted and crossed off the list automatically.
         </p>
 
         <h3 style={{ marginTop: "1.5rem" }}>Demo Video</h3>

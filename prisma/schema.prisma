@@ -1,0 +1,95 @@
+// Phoneme Builder — Assessment 2 database schema
+//
+// Two models drive everything:
+//   Word          a single phoneme-based word (the reusable "word bank")
+//   Activity      a saved Wordle or Word Search configuration
+//   ActivityWord  join table linking an Activity to its Word(s), in order
+//
+// SQLite has no native array/enum column type, so:
+//   - `phonemes` is stored as a JSON-encoded array of strings, e.g.
+//     '["tʃ","ɪ","n"]'. Storing it this way (rather than one column per
+//     character) matters because phonemes such as "tʃ", "əʉ" or "ɜː" are
+//     more than one character wide — splitting on character boundaries
+//     would break them apart.
+//   - `ActivityType` is a real Prisma enum; Prisma maps it to a TEXT
+//     column with a CHECK constraint under the hood on SQLite.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum ActivityType {
+  WORDLE
+  WORD_SEARCH
+}
+
+/// A single phoneme-based word, independent of any one activity, so the
+/// same word can be reused across many Wordle/Word Search configurations.
+model Word {
+  id         String   @id @default(cuid())
+  english    String
+  /// JSON-encoded array of phoneme symbols, e.g. ["tʃ","ɪ","n"]
+  phonemes   String
+  /// Number of phonemes in the word — mirrors the 3/4/5-phoneme tiers used
+  /// by the builder UI and doubles as a difficulty indicator.
+  difficulty Int
+  /// "corpus" for the starter word bank seeded with the project, "custom"
+  /// for anything a teacher has added since.
+  source     String   @default("custom")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  activityLinks ActivityWord[]
+
+  @@unique([english, phonemes])
+}
+
+/// A saved, generatable activity configuration (one Wordle target word, or
+/// one Word Search puzzle's word list) plus the display settings needed to
+/// reproduce the generated HTML output later.
+model Activity {
+  id         String       @id @default(cuid())
+  type       ActivityType
+  title      String
+
+  /// Whether the phoneme keyboard shows hint tooltips.
+  showHints  Boolean      @default(true)
+  /// Wordle only — number of guesses allowed.
+  numGuesses Int?
+  /// Word Search only — grid dimensions.
+  rows       Int?
+  cols       Int?
+
+  /// Output/generation settings, snapshotted from the site preferences in
+  /// effect when the activity was saved.
+  theme  String @default("light")
+  layout String @default("comfortable")
+  size   String @default("medium")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  words ActivityWord[]
+}
+
+/// Links an Activity to the Word(s) it uses, preserving order via
+/// `position` (Wordle activities have exactly one row; Word Search
+/// activities have two or more).
+model ActivityWord {
+  id       String @id @default(cuid())
+  position Int
+
+  activityId String
+  wordId     String
+
+  activity Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  word     Word     @relation(fields: [wordId], references: [id], onDelete: Cascade)
+
+  @@unique([activityId, wordId])
+  @@index([activityId, position])
+}

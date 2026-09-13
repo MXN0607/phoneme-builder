@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { downloadHtmlFile } from "../lib/download";
 import { getSitePreferences, THEME_COLORS, SIZE_SCALE, SitePreferences } from "../lib/preferences";
 import { CorpusWord, CORPUS_3, CORPUS_4, CORPUS_5, pickRandomCorpusWords } from "../lib/wordCorpus";
+import type { WordRecord, ActivityRecord } from "../lib/types";
 
 // ---------------------------------------------------------------------------
 // Phoneme keyboard data
@@ -407,7 +409,7 @@ function CorpusTier({
 // Page
 // ---------------------------------------------------------------------------
 
-export default function WordlePage() {
+function WordleBuilder() {
   // Builder form state
   const [phonemeWordInput, setPhonemeWordInput] = useState("");
   const [englishWordInput, setEnglishWordInput] = useState("");
@@ -422,6 +424,100 @@ export default function WordlePage() {
   const [guesses, setGuesses] = useState<string[][]>([]);
   const [currentGuess, setCurrentGuess] = useState<string[]>([]);
   const [gameStatus, setGameStatus] = useState<"playing" | "won" | "lost">("playing");
+
+  // --- Database-backed word bank + saved activities ---
+  const searchParams = useSearchParams();
+  const [dbWords, setDbWords] = useState<WordRecord[]>([]);
+  const [activityTitle, setActivityTitle] = useState("");
+  const [loadedActivityId, setLoadedActivityId] = useState<string | null>(null);
+  const [savingActivity, setSavingActivity] = useState(false);
+  const [saveMessage, setSaveMessage] = useState("");
+
+  useEffect(() => {
+    fetch("/api/words")
+      .then((res) => (res.ok ? (res.json() as Promise<WordRecord[]>) : []))
+      .then(setDbWords)
+      .catch(() => setDbWords([]));
+  }, []);
+
+  // If the page was opened from the Activities list (?activityId=...), load
+  // that saved configuration into the builder instead of starting blank.
+  useEffect(() => {
+    const activityId = searchParams.get("activityId");
+    if (!activityId) return;
+
+    fetch(`/api/activities/${activityId}`)
+      .then((res) => (res.ok ? (res.json() as Promise<ActivityRecord>) : null))
+      .then((activity) => {
+        if (!activity || activity.type !== "WORDLE") return;
+        const word = activity.words[0];
+        if (word) {
+          setPhonemeWordInput(word.phonemes.join(" "));
+          setEnglishWordInput(word.english);
+        }
+        setShowHints(activity.showHints);
+        setNumGuesses(activity.numGuesses ?? 6);
+        setActivityTitle(activity.title);
+        setLoadedActivityId(activity.id);
+      })
+      .catch(() => {
+        /* ignore — builder just stays blank */
+      });
+  }, [searchParams]);
+
+  // --- Save the current word + settings as a reusable Activity ---
+
+  async function handleSaveActivity() {
+    const parsedTarget = phonemeWordInput.trim().split(/\s+/).filter(Boolean);
+    if (parsedTarget.length === 0 || englishWordInput.trim() === "") {
+      setMessage("Enter both a phoneme word and its English word first.");
+      return;
+    }
+
+    setSavingActivity(true);
+    setSaveMessage("");
+    try {
+      const payload = {
+        type: "WORDLE" as const,
+        title: activityTitle.trim() || englishWordInput.trim(),
+        showHints,
+        numGuesses,
+        theme: getSitePreferences().theme,
+        layout: getSitePreferences().layout,
+        size: getSitePreferences().size,
+        words: [
+          {
+            english: englishWordInput.trim(),
+            phonemes: parsedTarget,
+            source: "custom" as const,
+          },
+        ],
+      };
+
+      const res = await fetch(
+        loadedActivityId ? `/api/activities/${loadedActivityId}` : "/api/activities",
+        {
+          method: loadedActivityId ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }
+      );
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error ?? "Failed to save activity");
+      }
+
+      const saved = (await res.json()) as ActivityRecord;
+      setLoadedActivityId(saved.id);
+      setActivityTitle(saved.title);
+      setSaveMessage(loadedActivityId ? "Activity updated." : "Activity saved.");
+    } catch (err) {
+      setSaveMessage(err instanceof Error ? err.message : "Failed to save activity");
+    } finally {
+      setSavingActivity(false);
+    }
+  }
 
   // Highlights whichever corpus word is currently loaded into the inputs.
   // Typing by hand simply clears the highlight, which is the behaviour we want.
@@ -565,6 +661,14 @@ export default function WordlePage() {
               selectedEnglish={selectedEnglish}
               onSelect={handleSelectCorpusWord}
             />
+            {dbWords.length > 0 && (
+              <CorpusTier
+                title="My Word Bank"
+                words={dbWords}
+                selectedEnglish={selectedEnglish}
+                onSelect={handleSelectCorpusWord}
+              />
+            )}
           </div>
 
           <button onClick={handleRandomWord} style={{ marginTop: "0.75rem", ...actionButtonStyle("neutral") }}>
@@ -648,6 +752,32 @@ export default function WordlePage() {
           </div>
 
           {message && <p style={{ color: "#dc2626", marginTop: "0.75rem" }}>{message}</p>}
+
+          <hr style={{ border: "none", borderTop: "1px solid #e2e8f0", margin: "1.25rem 0" }} />
+
+          <label>
+            <strong>Save to database{loadedActivityId ? " (editing saved activity)" : ""}</strong>
+            <br />
+            <input
+              type="text"
+              value={activityTitle}
+              onChange={(e) => setActivityTitle(e.target.value)}
+              placeholder="Activity title (optional — defaults to the English word)"
+              style={inputStyle}
+            />
+          </label>
+          <button
+            onClick={handleSaveActivity}
+            disabled={savingActivity}
+            style={{ marginTop: "0.6rem", ...actionButtonStyle("neutral") }}
+          >
+            {savingActivity ? "Saving…" : loadedActivityId ? "Update Activity" : "Save Activity"}
+          </button>
+          {saveMessage && (
+            <p style={{ color: saveMessage.includes("saved") || saveMessage.includes("updated") ? "#16a34a" : "#dc2626", marginTop: "0.5rem" }}>
+              {saveMessage}
+            </p>
+          )}
         </div>
       )}
 
@@ -803,5 +933,16 @@ export default function WordlePage() {
         </div>
       )}
     </div>
+  );
+}
+
+// Wrapped in Suspense because WordleBuilder reads the URL via
+// useSearchParams() (to support ?activityId=... deep links from the
+// Activities page), which Next.js requires a Suspense boundary for.
+export default function WordlePage() {
+  return (
+    <Suspense fallback={<div style={{ textAlign: "center", padding: "2rem" }}>Loading…</div>}>
+      <WordleBuilder />
+    </Suspense>
   );
 }

@@ -21,6 +21,8 @@ export default function NavBar() {
         <Link href="/">Home</Link>
         <Link href="/wordle">Wordle</Link>
         <Link href="/word-search">Word Search</Link>
+        <Link href="/words">Word Bank</Link>
+        <Link href="/activities">Activities</Link>
       </div>
 
       <button

@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { downloadHtmlFile } from "../lib/download";
 import { getSitePreferences, THEME_COLORS, SIZE_SCALE, SitePreferences } from "../lib/preferences";
-import { CorpusWord, CORPUS_3, CORPUS_4, CORPUS_5, CORPUS_ALL, pickRandomCorpusWords } from "../lib/wordCorpus";
+import { CorpusWord, CORPUS_3, CORPUS_4, CORPUS_5, pickRandomCorpusWords } from "../lib/wordCorpus";
+import type { WordRecord, ActivityRecord } from "../lib/types";
 
 type Cell = {
   phoneme: string;
@@ -332,7 +334,7 @@ function CorpusTier({
   );
 }
 
-export default function WordSearchPage() {
+function WordSearchBuilder() {
   const [rows, setRows] = useState(10);
   const [cols, setCols] = useState(10);
   const [grid, setGrid] = useState<Cell[][] | null>(null);
@@ -349,12 +351,105 @@ export default function WordSearchPage() {
   const [dragStart, setDragStart] = useState<Pos | null>(null);
   const [dragPath, setDragPath] = useState<Pos[]>([]);
 
-  // Pick a random starting set of 5 words once the page has mounted
-  // (kept out of the initial state to avoid a server/client mismatch).
+  // --- Database-backed word bank + saved activities ---
+  const searchParams = useSearchParams();
+  const activityId = searchParams.get("activityId");
+  const [dbWords, setDbWords] = useState<WordRecord[]>([]);
+  const [activityTitle, setActivityTitle] = useState("");
+  const [loadedActivityId, setLoadedActivityId] = useState<string | null>(null);
+  const [savingActivity, setSavingActivity] = useState(false);
+  const [saveMessage, setSaveMessage] = useState("");
+
   useEffect(() => {
+    fetch("/api/words")
+      .then((res) => (res.ok ? (res.json() as Promise<WordRecord[]>) : []))
+      .then(setDbWords)
+      .catch(() => setDbWords([]));
+  }, []);
+
+  // Pick a random starting set of 5 words once the page has mounted
+  // (kept out of the initial state to avoid a server/client mismatch) —
+  // unless we're about to load a saved activity instead (below).
+  useEffect(() => {
+    if (activityId) return;
+    // Client-only random pick, deliberately done after mount (not in the
+    // initial state) to avoid a server/client hydration mismatch.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSelectedWords(pickRandomCorpusWords(5));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // If the page was opened from the Activities list (?activityId=...), load
+  // that saved configuration into the builder instead of a random puzzle.
+  useEffect(() => {
+    if (!activityId) return;
+
+    fetch(`/api/activities/${activityId}`)
+      .then((res) => (res.ok ? (res.json() as Promise<ActivityRecord>) : null))
+      .then((activity) => {
+        if (!activity || activity.type !== "WORD_SEARCH") return;
+        setSelectedWords(activity.words.map((w) => ({ english: w.english, phonemes: w.phonemes })));
+        setRows(activity.rows ?? 10);
+        setCols(activity.cols ?? 10);
+        setActivityTitle(activity.title);
+        setLoadedActivityId(activity.id);
+      })
+      .catch(() => {
+        /* ignore — builder falls back to whatever is already selected */
+      });
+  }, [activityId]);
+
+  // --- Save the current word list + settings as a reusable Activity ---
+
+  async function handleSaveActivity() {
+    if (selectedWords.length < 2) {
+      setSaveMessage("Select at least two words before saving.");
+      return;
+    }
+
+    setSavingActivity(true);
+    setSaveMessage("");
+    try {
+      const prefs = getSitePreferences();
+      const payload = {
+        type: "WORD_SEARCH" as const,
+        title: activityTitle.trim() || "Word Search",
+        rows,
+        cols,
+        theme: prefs.theme,
+        layout: prefs.layout,
+        size: prefs.size,
+        words: selectedWords.map((word) => ({
+          english: word.english,
+          phonemes: word.phonemes,
+          source: "custom" as const,
+        })),
+      };
+
+      const res = await fetch(
+        loadedActivityId ? `/api/activities/${loadedActivityId}` : "/api/activities",
+        {
+          method: loadedActivityId ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }
+      );
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error ?? "Failed to save activity");
+      }
+
+      const saved = (await res.json()) as ActivityRecord;
+      setLoadedActivityId(saved.id);
+      setActivityTitle(saved.title);
+      setSaveMessage(loadedActivityId ? "Activity updated." : "Activity saved.");
+    } catch (err) {
+      setSaveMessage(err instanceof Error ? err.message : "Failed to save activity");
+    } finally {
+      setSavingActivity(false);
+    }
+  }
 
   // Whenever the selected words or grid dimensions change, rebuild the
   // puzzle immediately — no separate "build" step needed.
@@ -532,6 +627,14 @@ export default function WordSearchPage() {
               selectedEnglish={selectedEnglish}
               onToggle={toggleCorpusWord}
             />
+            {dbWords.length > 0 && (
+              <CorpusTier
+                title="My Word Bank"
+                words={dbWords}
+                selectedEnglish={selectedEnglish}
+                onToggle={toggleCorpusWord}
+              />
+            )}
           </div>
 
           <button
@@ -738,6 +841,64 @@ export default function WordSearchPage() {
               Generate (Download HTML)
             </button>
           </div>
+
+          <details
+            style={{
+              border: "1px solid #cbd5e1",
+              borderRadius: "8px",
+              padding: "0.75rem",
+              marginTop: "1rem",
+            }}
+            open={Boolean(loadedActivityId)}
+          >
+            <summary style={{ cursor: "pointer", fontWeight: 600, fontSize: "0.9rem" }}>
+              Save to database{loadedActivityId ? " (editing saved activity)" : ""}
+            </summary>
+            <div style={{ marginTop: "0.5rem" }}>
+              <input
+                type="text"
+                value={activityTitle}
+                onChange={(e) => setActivityTitle(e.target.value)}
+                placeholder="Activity title (optional)"
+                style={{
+                  border: "1px solid #cbd5e1",
+                  borderRadius: "6px",
+                  padding: "0.4rem 0.6rem",
+                  width: "100%",
+                  boxSizing: "border-box",
+                  marginBottom: "0.5rem",
+                }}
+              />
+              <button
+                onClick={handleSaveActivity}
+                disabled={savingActivity}
+                style={{
+                  border: "1px solid #475569",
+                  borderRadius: "6px",
+                  padding: "0.5rem",
+                  color: "#fff",
+                  backgroundColor: "#64748b",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  width: "100%",
+                  boxSizing: "border-box",
+                }}
+              >
+                {savingActivity ? "Saving…" : loadedActivityId ? "Update Activity" : "Save Activity"}
+              </button>
+              {saveMessage && (
+                <p
+                  style={{
+                    color: saveMessage.includes("saved") || saveMessage.includes("updated") ? "#16a34a" : "#dc2626",
+                    fontSize: "0.85rem",
+                    marginTop: "0.4rem",
+                  }}
+                >
+                  {saveMessage}
+                </p>
+              )}
+            </div>
+          </details>
         </div>
 
         <div>
@@ -817,5 +978,16 @@ export default function WordSearchPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Wrapped in Suspense because WordSearchBuilder reads the URL via
+// useSearchParams() (to support ?activityId=... deep links from the
+// Activities page), which Next.js requires a Suspense boundary for.
+export default function WordSearchPage() {
+  return (
+    <Suspense fallback={<div style={{ textAlign: "center", padding: "2rem" }}>Loading…</div>}>
+      <WordSearchBuilder />
+    </Suspense>
   );
 }
