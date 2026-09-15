@@ -1,0 +1,16 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      # Persists the SQLite database (word bank + saved activities) across
+      # `docker compose down` / container recreation. Delete this named
+      # volume (`docker volume rm phoneme-builder_phoneme-data`) to reset
+      # the database back to just the seeded starter words.
+      - phoneme-data:/app/data
+    environment:
+      - DATABASE_URL=file:/app/data/prod.db
+
+volumes:
+  phoneme-data:
