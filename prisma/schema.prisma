@@ -93,3 +93,39 @@ model ActivityWord {
   @@unique([activityId, wordId])
   @@index([activityId, position])
 }
+
+// --- Assessment 3: observability / reporting ---
+//
+// One flexible event log, rather than a separate table per metric, because
+// every dashboard number the brief asks for (success/failure counts,
+// average time on page, most-used activity type) is just an aggregation
+// over "things that happened" — counting and averaging rows is simpler
+// and easier to extend than maintaining running totals by hand.
+// "Most-used activity type" is derived from generation attempts
+// (successes + failures), not from how many Activities are saved — that
+// reflects how much the builder is actually being used, not just how many
+// configs happen to be stored.
+
+enum UsageEventType {
+  GENERATION_SUCCESS
+  GENERATION_FAILURE
+  PAGE_VIEW
+}
+
+model UsageEvent {
+  id           String          @id @default(cuid())
+  type         UsageEventType
+  /// Which builder this relates to. Null is reserved for event types that
+  /// aren't tied to one (none currently, but kept optional for that reason).
+  activityType ActivityType?
+  /// Only set for PAGE_VIEW events — time spent on the builder page, in ms.
+  durationMs   Int?
+  /// Short human-readable note, e.g. a failure reason ("no words selected,
+  /// generated from random corpus words instead"). Shown in the dashboard's
+  /// alerts feed.
+  detail       String?
+  createdAt    DateTime        @default(now())
+
+  @@index([type, createdAt])
+  @@index([activityType])
+}

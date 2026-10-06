@@ -23,6 +23,7 @@ export default function NavBar() {
         <Link href="/word-search">Word Search</Link>
         <Link href="/words">Word Bank</Link>
         <Link href="/activities">Activities</Link>
+        <Link href="/dashboard">Dashboard</Link>
       </div>
 
       <button

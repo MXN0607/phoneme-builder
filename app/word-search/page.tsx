@@ -6,6 +6,7 @@ import { downloadHtmlFile } from "../lib/download";
 import { getSitePreferences, THEME_COLORS, SIZE_SCALE, SitePreferences } from "../lib/preferences";
 import { CorpusWord, CORPUS_3, CORPUS_4, CORPUS_5, pickRandomCorpusWords } from "../lib/wordCorpus";
 import type { WordRecord, ActivityRecord } from "../lib/types";
+import { useTrackPageView, logGenerationEvent } from "../lib/metrics-client";
 
 type Cell = {
   phoneme: string;
@@ -335,6 +336,10 @@ function CorpusTier({
 }
 
 function WordSearchBuilder() {
+  // Assessment 3: reports how long this page stays open, for the
+  // dashboard's average-time-on-page metric.
+  useTrackPageView("WORD_SEARCH");
+
   const [rows, setRows] = useState(10);
   const [cols, setCols] = useState(10);
   const [grid, setGrid] = useState<Cell[][] | null>(null);
@@ -507,9 +512,13 @@ function WordSearchBuilder() {
   function handleGenerate() {
     let exportGrid = grid;
     let exportWords = wordList;
+    let intendedWordCount = selectedWords.length;
+    let usedFallback = false;
 
     if (!exportGrid || exportWords.length === 0) {
+      usedFallback = true;
       const chosen = pickRandomCorpusWords(5);
+      intendedWordCount = chosen.length;
       const result = generateGrid(
         chosen.map((w) => w.phonemes),
         rows,
@@ -522,6 +531,26 @@ function WordSearchBuilder() {
     const prefs = getSitePreferences();
     const html = buildWordSearchHtml(exportGrid, exportWords, prefs);
     downloadHtmlFile("phoneme-word-search.html", html);
+
+    // The puzzle still downloads either way (never block the person's
+    // actual task) — but both of these are genuinely "didn't do what was
+    // asked" situations worth surfacing on the dashboard, not just normal
+    // operation.
+    if (usedFallback) {
+      logGenerationEvent(
+        false,
+        "WORD_SEARCH",
+        "No words selected — generated from random corpus words instead"
+      );
+    } else if (exportWords.length < intendedWordCount) {
+      logGenerationEvent(
+        false,
+        "WORD_SEARCH",
+        `${intendedWordCount - exportWords.length} of ${intendedWordCount} words didn't fit in the grid`
+      );
+    } else {
+      logGenerationEvent(true, "WORD_SEARCH");
+    }
   }
 
   function handleCellMouseDown(r: number, c: number) {
@@ -669,6 +698,7 @@ function WordSearchBuilder() {
             <div style={{ marginTop: "0.5rem" }}>
               <input
                 type="text"
+                aria-label="Custom word: English word"
                 value={customEnglish}
                 onChange={(e) => setCustomEnglish(e.target.value)}
                 placeholder="English word, e.g. dog"
@@ -683,6 +713,7 @@ function WordSearchBuilder() {
               />
               <input
                 type="text"
+                aria-label="Custom word: phonemes"
                 value={customPhonemes}
                 onChange={(e) => setCustomPhonemes(e.target.value)}
                 placeholder="Phonemes, e.g. d ɒ g"
@@ -857,6 +888,7 @@ function WordSearchBuilder() {
             <div style={{ marginTop: "0.5rem" }}>
               <input
                 type="text"
+                aria-label="Activity title"
                 value={activityTitle}
                 onChange={(e) => setActivityTitle(e.target.value)}
                 placeholder="Activity title (optional)"

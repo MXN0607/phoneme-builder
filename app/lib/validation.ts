@@ -109,3 +109,33 @@ export type ActivityInput = z.infer<typeof activityInputSchema>;
 export const activityUpdateSchema = baseActivitySchema.partial();
 
 export type ActivityUpdateInput = z.infer<typeof activityUpdateSchema>;
+
+// --- Assessment 3: usage/observability events ---
+
+const usageEventTypeSchema = z.enum([
+  "GENERATION_SUCCESS",
+  "GENERATION_FAILURE",
+  "PAGE_VIEW",
+]);
+
+export const usageEventInputSchema = z
+  .object({
+    type: usageEventTypeSchema,
+    activityType: z.enum(["WORDLE", "WORD_SEARCH"]).optional(),
+    // Capped at 2 hours — anything longer almost certainly means a tab was
+    // left open in the background rather than someone genuinely using the
+    // builder for that long, and would badly skew the average.
+    durationMs: z.number().int().min(0).max(2 * 60 * 60 * 1000).optional(),
+    detail: z.string().trim().max(200).optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.type === "PAGE_VIEW" && data.durationMs === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: "durationMs is required for PAGE_VIEW events",
+        path: ["durationMs"],
+      });
+    }
+  });
+
+export type UsageEventInput = z.infer<typeof usageEventInputSchema>;

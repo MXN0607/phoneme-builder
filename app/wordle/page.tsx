@@ -6,6 +6,7 @@ import { downloadHtmlFile } from "../lib/download";
 import { getSitePreferences, THEME_COLORS, SIZE_SCALE, SitePreferences } from "../lib/preferences";
 import { CorpusWord, CORPUS_3, CORPUS_4, CORPUS_5, pickRandomCorpusWords } from "../lib/wordCorpus";
 import type { WordRecord, ActivityRecord } from "../lib/types";
+import { useTrackPageView, logGenerationEvent } from "../lib/metrics-client";
 
 // ---------------------------------------------------------------------------
 // Phoneme keyboard data
@@ -410,6 +411,10 @@ function CorpusTier({
 // ---------------------------------------------------------------------------
 
 function WordleBuilder() {
+  // Assessment 3: reports how long this page stays open, for the
+  // dashboard's average-time-on-page metric.
+  useTrackPageView("WORDLE");
+
   // Builder form state
   const [phonemeWordInput, setPhonemeWordInput] = useState("");
   const [englishWordInput, setEnglishWordInput] = useState("");
@@ -570,6 +575,7 @@ function WordleBuilder() {
       const parsed = phonemeWordInput.trim().split(/\s+/).filter(Boolean);
       if (parsed.length === 0 || englishWordInput.trim() === "") {
         setMessage("Enter both a phoneme word and its English word first.");
+        logGenerationEvent(false, "WORDLE", "Missing target word or English word");
         return;
       }
       exportTarget = parsed;
@@ -580,6 +586,7 @@ function WordleBuilder() {
     const html = buildWordleHtml(exportTarget, exportEnglish, numGuesses, showHints, prefs);
     const safeName = exportEnglish.toLowerCase().replace(/[^a-z0-9]+/g, "-");
     downloadHtmlFile(`phoneme-wordle-${safeName}.html`, html);
+    logGenerationEvent(true, "WORDLE");
   }
 
   // --- Gameplay (in-app preview) ---

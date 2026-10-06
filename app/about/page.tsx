@@ -95,6 +95,7 @@ export default function AboutPage() {
           <div style={{ textAlign: "center", marginTop: "1rem" }}>
             <video
               controls
+              aria-label="Walkthrough video demonstrating how to use the Phoneme Builder"
               width="100%"
               style={{ maxWidth: "800px", borderRadius: "12px" }}
             >

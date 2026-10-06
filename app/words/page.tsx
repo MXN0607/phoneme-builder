@@ -212,6 +212,7 @@ export default function WordBankPage() {
 
       <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginBottom: "1rem" }}>
         <input
+          aria-label="Search words"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search words…"
@@ -247,6 +248,8 @@ export default function WordBankPage() {
           return (
             <div
               key={word.id}
+              data-testid="word-row"
+              data-word-english={word.english}
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -261,11 +264,13 @@ export default function WordBankPage() {
               {isEditing ? (
                 <>
                   <input
+                    aria-label="Edit English word"
                     value={editForm.english}
                     onChange={(e) => setEditForm((f) => ({ ...f, english: e.target.value }))}
                     style={{ ...inputStyle, maxWidth: "160px" }}
                   />
                   <input
+                    aria-label="Edit phonemes"
                     value={editForm.phonemes}
                     onChange={(e) => setEditForm((f) => ({ ...f, phonemes: e.target.value }))}
                     style={{ ...inputStyle, fontFamily: "monospace", maxWidth: "200px" }}
